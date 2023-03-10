@@ -4,7 +4,7 @@
     Face Classification using Machine Learning
 </h1>
 
-<h4 align="center">This project that attemps to classify faces using various machine learning and deep learning techniques.
+<h4 align="center">This project attemps to classify faces using various machine learning and deep learning techniques.
 </h4>
 
 ## Getting Started
