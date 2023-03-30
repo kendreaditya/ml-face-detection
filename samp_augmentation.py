@@ -45,25 +45,6 @@ def sampling_images(src_path, dst_path, max_count):
         img = Image.open(src_image_path)
         img.save(dst_image_path)
 
-def apply_augmentation(src_path, dst_path):
-    # Create an augmentation pipeline
-    p = Augmentor.Pipeline(source_directory=src_path, output_directory=dst_path)
-
-    # Define augmentation operations
-    # try rotate til 15
-    p.rotate(probability=0.25, max_left_rotation=15, max_right_rotation=15)
-    # try zoom
-    p.zoom(probability=0.25, min_factor=1.1, max_factor=1.5)
-    # try flip left right
-    p.flip_left_right(probability=0.25)
-    # try flip right left
-    p.flip_top_bottom(probability=0.25)
-
-    # Execute the augmentation pipeline (with length of 3 times from origin)
-    num_of_samples = 3*len(os.listdir(src_path))
-    p.sample(num_of_samples)
-
-
 def create_dataset_structure(src_dir, train_class_dir, test_class_dir, split_ratio):
     # get all image files in the src(aug) directory
     image_files = os.listdir(src_dir)
@@ -83,6 +64,24 @@ def create_dataset_structure(src_dir, train_class_dir, test_class_dir, split_rat
         dst_image_path = os.path.join(test_class_dir, image_file)
         shutil.copy(src_image_path, dst_image_path)
 
+def apply_augmentation(src_path, dst_path):
+    # Create an augmentation pipeline
+    p = Augmentor.Pipeline(source_directory=src_path, output_directory=dst_path)
+
+    # Define augmentation operations
+    # try rotate til 15
+    p.rotate(probability=0.25, max_left_rotation=15, max_right_rotation=15)
+    # try zoom
+    p.zoom(probability=0.25, min_factor=1.1, max_factor=1.5)
+    # try flip left right
+    p.flip_left_right(probability=0.25)
+    # try flip right left
+    p.flip_top_bottom(probability=0.25)
+
+    # Execute the augmentation pipeline (with length of 3 times from origin)
+    num_of_samples = 3*len(os.listdir(src_path))
+    p.sample(num_of_samples)
+
 if __name__ == "__main__":
     # 1. do sampling
     root = './data'
@@ -101,19 +100,20 @@ if __name__ == "__main__":
         os.makedirs(dst_path, exist_ok=True)
         sampling_images(src_path, dst_path, max_count)
 
-    # 2. do augmentation
-    for name in names:
-        src_path = os.path.join(root, name, '2_sampling')
-        dst_path = os.path.join("..", '3_augmented')
-        os.makedirs(dst_path, exist_ok=True)
-        apply_augmentation(src_path, dst_path)
-
-    # 3. now time to split, create train and test
+    # 2. now time to split, create train and test
     split_ratio = 0.8
     for name in names:
-        src_path = os.path.join(root, name, '3_augmented')
-        train_dst_path = os.path.join(root, "train", name)
+        src_path = os.path.join(root, name, '2_sampling')
+        train_dst_path = os.path.join(root, "train_before", name)
         test_dst_path = os.path.join(root, "test", name)
         os.makedirs(train_dst_path, exist_ok=True)
         os.makedirs(test_dst_path, exist_ok=True)
         create_dataset_structure(src_path, train_dst_path, test_dst_path, split_ratio)
+
+    # 3. do augmentation
+    for name in names:
+        src_path = os.path.join(root, "train_before", name)
+        dst_path = os.path.join("..", "..", "train")
+        apply_augmentation(src_path, dst_path)
+
+
