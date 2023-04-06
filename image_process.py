@@ -34,18 +34,25 @@ def resize_images(input_dir, output_dir, width, height):
             cv2.imwrite(resized_img_path, resized_img)
 
 if __name__ == "__main__":
-    path = './data'
-    names = ['aditya', 'jinyoon', 'Kenya', 'Peter', 'sami']
+    import argparse
+    from tqdm import tqdm
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset_dir", type=str, default="./data", help="path to dataset directory")
+    parser.add_argument("--output_dir", type=str, default="./images", help="path to output directory")
+
+    args = parser.parse_args()
+
+    names = os.listdir(args.dataset_dir)
     video_form = ['.mp4', '.mov', '.MOV']
+
     for name in names:
-        dir_path = os.path.join(path, name)
-        output_images = os.path.join(dir_path, '0_images')
-        output_resized = os.path.join(dir_path, '1_resized')
-        os.makedirs(output_images, exist_ok=True)
-        os.makedirs(output_resized, exist_ok=True)
-        for file in os.listdir(dir_path):
+        dir_path = os.path.join(args.dataset_dir, name)
+        output_images = os.path.join(args.output_dir, name)
+        os.makedirs(dir_path, exist_ok=True)
+
+        for file in tqdm(os.listdir(dir_path), desc=f"Processing {name}'s videos"):
             if file.endswith(tuple(video_form)):
                 video_path = os.path.join(dir_path, file)
                 desired_fps = 30
                 get_frames(name, video_path, output_images, desired_fps)
-        resize_images(output_images, output_resized, 270, 480)

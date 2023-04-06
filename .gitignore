@@ -1,5 +1,7 @@
 # Default Files
 *.DS_Store
+images/
+.idea
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

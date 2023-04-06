@@ -1,12 +1,8 @@
 import os
 import random
 from PIL import Image
-import Augmentor
 import shutil
 from random import shuffle
-
-from torchvision.datasets import ImageFolder
-from torchvision.transforms import ToTensor
 
 def sampling_images(src_path, dst_path, max_count):
     # List all image files in src_path
@@ -64,32 +60,21 @@ def create_dataset_structure(src_dir, train_class_dir, test_class_dir, split_rat
         dst_image_path = os.path.join(test_class_dir, image_file)
         shutil.copy(src_image_path, dst_image_path)
 
-# def apply_augmentation(src_path, dst_path):
-#     # Create an augmentation pipeline
-#     p = Augmentor.Pipeline(source_directory=src_path, output_directory=dst_path)
-#
-#     # Define augmentation operations
-#     # try rotate til 15
-#     p.rotate(probability=0.25, max_left_rotation=15, max_right_rotation=15)
-#     # try zoom
-#     p.zoom(probability=0.25, min_factor=1.1, max_factor=1.5)
-#     # try flip left right
-#     p.flip_left_right(probability=0.25)
-#     # try flip right left
-#     p.flip_top_bottom(probability=0.25)
-#
-#     # Execute the augmentation pipeline (with length of 3 times from origin)
-#     num_of_samples = 3*len(os.listdir(src_path))
-#     p.sample(num_of_samples)
-
 if __name__ == "__main__":
-    # 1. do sampling
-    root = './data'
-    names = ['aditya', 'jinyoon', 'Kenya', 'Peter', 'sami']
+    import argparse
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--dataset_dir", type=str, default="./data")
+    parser.add_argument("--output_dir", type=str, default="./images")
+    args = parser.parse_args()
+
+    names = os.listdir(args.dataset_dir)
+
     image_counts = {}
 
     for name in names:
-        image_path = os.path.join(root, name, '0_images')
+        image_path = os.path.join(args.dataset_dir, name)
         image_counts[name] = len(os.listdir(image_path))
 
     max_count = max(image_counts.values())
