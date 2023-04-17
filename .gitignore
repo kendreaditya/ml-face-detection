@@ -1,4 +1,5 @@
 # Default Files
+data/
 *.DS_Store
 images/
 .idea
