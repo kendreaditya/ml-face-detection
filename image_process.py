@@ -69,4 +69,4 @@ if __name__ == "__main__":
         pool.close()
         pool.join()
 
-    resize_images(args.output_dir, args.output_dir, args.width, args.height)
+    # resize_images(args.output_dir, args.output_dir, args.width, args.height)
