@@ -48,6 +48,26 @@ preprocess = transforms.Compose([
 #if os.path.exists(DATASET_PATH):
 #    print("Path Exists") 
 
+#Argument Parsing 
+
+if __name__ == "__main__": 
+    parser = argparse.ArgumentParser() 
+    parser.add_argument('DATASET_PATH', type=str, help="image data path")
+    parser.add_argument('k', type=int, help="number of features for classification")
+
+    args = parser.parse_args() 
+
+    DATASET_PATH = args.DATASET_PATH
+    k = args.k
+    #DATASET_PATH = "./data"
+    
+    if os.path.exists(DATASET_PATH):
+        print("Path Exists") 
+    else: 
+        print("Path does not exist" )
+        exit()
+
+
 
 dataset = ImageFolder(DATASET_PATH, preprocess)
 
@@ -184,7 +204,7 @@ class DimensionalityReduction(torch.nn.Module):
 
 #k is a parameter that will need to be user-entered
 print("Enter the number of parameters for the model: ") 
-k = 64
+#k = 64
 n_classes = len(dataset.classes)
 df = pd.read_csv("../ml-face-detection/ResNet-features.csv")
 
@@ -194,7 +214,7 @@ model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
 for param in model.parameters():
     param.requires_grad = False
 
-top_k_model = torch.nn.Sequential(*list(model.children())[:-1], DimensionalityReduction(df, in_features=512, out_features=k), torch.nn.Linear(in_features=64, out_features=n_classes))
+top_k_model = torch.nn.Sequential(*list(model.children())[:-1], DimensionalityReduction(df, in_features=512, out_features=k), torch.nn.Linear(in_features=k, out_features=n_classes))
 
 def train(model, dataloader, val_dataloader, criterion, optimizer, device, save_path, early_stop_epochs=5):
     best_val_loss = float('inf')
@@ -252,7 +272,7 @@ def train(model, dataloader, val_dataloader, criterion, optimizer, device, save_
         print(f"Epoch {epoch+1} - Train loss: {epoch_loss:.4f}, Val loss: {val_loss:.4f}")
 
 train(top_k_model, train_loader,
-     val_loader, nn.CrossEntropyLoss(),
+     val_loader, torch.nn.CrossEntropyLoss(),
      optim.SGD(top_k_model.parameters(), lr=0.001, momentum=0.9),
      device,
       "../ml-face-detection/top-k-model.pt")
@@ -305,8 +325,4 @@ calculate_metrics(top_k_model, val_loader, os.listdir(DATASET_PATH))
 device
 calculate_metrics(top_k_model, test_loader, os.listdir(DATASET_PATH))
 
-#Argparse section 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
 
