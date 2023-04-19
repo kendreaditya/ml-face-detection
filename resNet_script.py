@@ -40,13 +40,6 @@ preprocess = transforms.Compose([
 
 #@title Create Dataset & Dataloader
 # Create a Dataset Object that takes the image paths (via an path to the folder) and preprocesses them
-#Need to define DATASET_PATH, make it user-entered 
-
-#print(f"Enter dataset path")
-#DATASET_PATH = input()
-
-#if os.path.exists(DATASET_PATH):
-#    print("Path Exists") 
 
 #Argument Parsing 
 
