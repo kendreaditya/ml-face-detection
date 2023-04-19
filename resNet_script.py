@@ -52,7 +52,6 @@ if __name__ == "__main__":
 
     DATASET_PATH = args.DATASET_PATH
     k = args.k
-    #DATASET_PATH = "./data"
     
     if os.path.exists(DATASET_PATH):
         print("Path Exists") 
