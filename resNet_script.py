@@ -1,69 +1,87 @@
-#imports 
-
+import matplotlib.pyplot as plt
 import torch 
 import torch as nn
 from torchvision.datasets import ImageFolder 
 from torchvision import transforms 
 import torch.optim as optim 
-
+from torch.utils.data import Subset, SubsetRandomSampler 
 import numpy as np 
 import pandas as pd 
-
 from tqdm import tqdm 
-
 import math
 import random 
 from collections import defaultdict 
-from torch.utils.data import Subset, SubsetRandomSampler 
 import copy 
 import os 
 import argparse
 from PIL import Image, ImageFile 
 ImageFile.LOAD_TRUNCATED_IMAGES = True 
 
-#Data Preprocessing 
+from models import topKResnet18
 
-preprocess = transforms.Compose([
+# Creates transforms which are used for data augmentation and preprocessing
+def get_dataset_transforms():
+    np.random.seed(0)
+    torch.manual_seed(0)
 
-    # Data Augmentation
-    # transforms.RandomHorizontalFlip(),
-    # transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-    # transforms.RandomRotation(degrees=10),
-    # transforms.RandomResizedCrop(size=(256, 256), scale=(0.8, 1.2), ratio=(0.75, 1.33)),
+    data_augmentation = [
+        # Data Augmentation
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+        transforms.RandomRotation(degrees=10),
+        transforms.RandomResizedCrop(size=(256, 256), scale=(0.8, 1.2), ratio=(0.75, 1.33))
+    ]
 
-    # Data Preprocessing
-    transforms.CenterCrop(224), # Crops the image to a 224 x 224 image
-    transforms.ToTensor(), # Converts the Image Object to a Tensor object (which is how PyTorch keeps track of its gradients which is used for Backpropagation)
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # Normalize the images
-])
+    preprocess = [
+        
+        # Data Preprocessing
+        transforms.CenterCrop(224), # Crops the image to a 224 x 224 image 
+        transforms.ToTensor(), # Converts the Image Object to a Tensor object (which is how PyTorch keeps track of its gradients which is used for Backpropagation)
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # Normalize the images
+    ]
 
+    return {
+        'train': transforms.Compose([*data_augmentation, *preprocess]),
+        'val': transforms.Compose([transforms.Resize(size=(256, 256)), *preprocess]),
+        'test': transforms.Compose([transforms.Resize(size=(256, 256)), *preprocess])
+    }
 
-#@title Create Dataset & Dataloader
-# Create a Dataset Object that takes the image paths (via an path to the folder) and preprocesses them
+# Creates a Dataset Object that takes the image paths (via an path to the folder) and preprocesses them
+def compile_dataset(path):
+    dataset = ImageFolder(path)
 
-#Argument Parsing 
+    dataset_transforms = get_dataset_transforms()
+    class_split_freq, [train_dataset, val_dataset, test_dataset] = stratified_split(dataset, [0.7, 0.15, 0.15], dataset_transforms=list(dataset_transforms.values()))
 
-if __name__ == "__main__": 
-    parser = argparse.ArgumentParser() 
-    parser.add_argument('DATASET_PATH', type=str, help="image data path")
-    parser.add_argument('k', type=int, help="number of features for classification")
+    return train_dataset, val_dataset, test_dataset
 
-    args = parser.parse_args() 
+# Creates a Dataloader Object that takes the Dataset Object and creates a batch of images
+def get_dataloaders(train_dataset, val_dataset, test_dataset, batch_size=64, num_workers=2):
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=num_workers)
 
-    DATASET_PATH = args.DATASET_PATH
-    k = args.k
+    return train_loader, val_loader, test_loader
+
+# Displays a batch of images
+def show_batch(batch):
+    # Convert the batch to a NumPy array
+    batch = batch.numpy()
     
-    if os.path.exists(DATASET_PATH):
-        print("Path Exists") 
-    else: 
-        print("Path does not exist" )
-        exit()
+    # Transpose the array so that the channels come last
+    batch = np.transpose(batch, (0, 2, 3, 1))
+    
+    # Create a figure with a grid of images
+    fig, ax = plt.subplots(nrows=batch.shape[0], ncols=1)
+    
+    # Loop over the images in the batch and display them
+    for i in range(batch.shape[0]):
+        ax[i].imshow(batch[i])
+        ax[i].axis('off')
+    
+    plt.show()
 
-
-
-dataset = ImageFolder(DATASET_PATH, preprocess)
-
-
+# Creates a stratified split of the dataset
 def stratified_split(dataset, split_ratios):
     num_splits = len(split_ratios)
     # Compute class frequencies
@@ -102,111 +120,6 @@ def stratified_split(dataset, split_ratios):
         splits.append(split_dataset)
 
     return class_split_freq, splits
-
-
-class_split_freq, [train_dataset, val_dataset, test_dataset] = stratified_split(dataset, [0.7, 0.15, 0.15])
-
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
-val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=64)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=64)
-
-# Downloads and initializes the ResNet model from the PyTorch database
-model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
-
-# Here we remove the last layer - fc (fully connected) so we can do PCA on it
-model = nn.nn.Sequential(*list(model.children())[:-1])
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model.to(device)
-
-# Here we run the dataset though the model to get the raw features with the shape of (batch_size, 512)
-rows = []
-for (inputs, labels) in tqdm(train_loader):
-  inputs = inputs.to(device)
-  output_features = model(inputs)
-
-  for row in np.squeeze(output_features.to('cpu').detach().numpy()):
-    rows.append(row)
-
-# Here we create a dataframe to store the outputs of the model
-df = pd.DataFrame(rows, columns=[f'{i}' for i in range(512)])
-
-df.to_csv("../ml-face-detection/ResNet-features.csv")
-
-
-# Define custom layer
-class DimensionalityReduction(torch.nn.Module):
-    def __init__(self, df, in_features=512, out_features=64):
-        super(DimensionalityReduction, self).__init__()
-        df_top_k = self.find_k_top_corr(df, out_features)
-
-        self.columns = [int(i) for i in list(df_top_k.columns)]
-
-    def find_k_top_corr(self, df, number):
-      """
-        Given a pandas dataframe, and number of columns you want, it returns df with top n correlated columns
-
-        Parameters:
-        -----------
-        df : pandas dataframe
-        n  : the number of columns you want as the most correlated columns(features)
-
-        Returns:
-        --------
-        reduced_df : DataFrame
-            pandas dataframe with top n most correlated features
-        """
-      # Calculate the correlation matrix(abs for absolute values, focus on correlation itself)
-      corr_matrix = df.corr().abs()
-
-      # lets create a mask with size of our corr matrix that filled with ones,  but it will only fill lower trinagle. then convert them as boolean.
-      mask = np.tril(np.ones(corr_matrix.shape)).astype(np.bool)
-
-      # with using df.mask, we fill the lower triangular matrix to NaN(includes diagonal with 1.0s)
-      masked_corr_matrix = corr_matrix.mask(mask)
-
-      # using df.unstack() we turn them into a new level of column labels whose inner-most level consists of the pivoted index labels.
-      # In summary, we can get new table that each index of feature that has all the correlations of each every other features
-      # https://www.w3resource.com/pandas/dataframe/dataframe-unstack.php
-      correlations_sorted_table = masked_corr_matrix.unstack(level=1).sort_values(ascending=False)
-
-      # now we got every correlation of the matrix in a long line of index, we search top 64 of them without duplicates.
-      top_features = []
-      for pair in correlations_sorted_table.index:
-          # add first pair if length did not reach
-          if pair[0] not in top_features and len(top_features) < number:
-              top_features.append(pair[0])
-          # add second pair if length did not reach
-          if pair[1] not in top_features and len(top_features) < number:
-              top_features.append(pair[1])
-          # break if length reached
-          if len(top_features) >= number:
-              break
-
-      # only pick the columns th"/data" at has top 64 from previous dataframe to our new dataframe
-      reduced_df = df[top_features]
-
-      return reduced_df
-
-    def forward(self, x):
-        # Select only the columns specified in self.columns
-        reduced_x = x[:, self.columns].squeeze()
-
-        return reduced_x
-
-#k is a parameter that will need to be user-entered
-print("Enter the number of parameters for the model: ") 
-#k = 64
-n_classes = len(dataset.classes)
-df = pd.read_csv("../ml-face-detection/ResNet-features.csv")
-
-# Downloads and initializes the ResNet model from the PyTorch database
-model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
-
-for param in model.parameters():
-    param.requires_grad = False
-
-top_k_model = torch.nn.Sequential(*list(model.children())[:-1], DimensionalityReduction(df, in_features=512, out_features=k), torch.nn.Linear(in_features=k, out_features=n_classes))
 
 def train(model, dataloader, val_dataloader, criterion, optimizer, device, save_path, early_stop_epochs=5):
     best_val_loss = float('inf')
@@ -263,13 +176,6 @@ def train(model, dataloader, val_dataloader, criterion, optimizer, device, save_
 
         print(f"Epoch {epoch+1} - Train loss: {epoch_loss:.4f}, Val loss: {val_loss:.4f}")
 
-train(top_k_model, train_loader,
-     val_loader, torch.nn.CrossEntropyLoss(),
-     optim.SGD(top_k_model.parameters(), lr=0.001, momentum=0.9),
-     device,
-      "../ml-face-detection/top-k-model.pt")
-
-
 def calculate_metrics(model, val_loader, class_names):
     model.eval()  # Set the model to evaluation mode
     device = next(model.parameters()).device  # Get the device the model is on
@@ -303,18 +209,37 @@ def calculate_metrics(model, val_loader, class_names):
 
     return accuracy, class_accuracy
 
-checkpoint_path = '../ml-face-detection/top-k-model.pt'
+if __name__ == "__main__": 
+    parser = argparse.ArgumentParser() 
+    parser.add_argument('DATASET_PATH', type=str, help="image data path")
+    parser.add_argument('CHECKPOINT_PATH', type=str, help="Path to save the model checkpoints")
+    parser.add_argument('k', type=int, help="number of features for classification")
 
-# Load the checkpoint file
-checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+    args = parser.parse_args() 
 
-# Extract the model state dictionary from the checkpoint
-# Create a new instance of your model
-# Load the state dictionary into the model
-top_k_model.load_state_dict(checkpoint)
+    DATASET_PATH = args.DATASET_PATH
+    k = args.k
+    
+    if os.path.exists(DATASET_PATH):
+        print("Path Exists") 
+        
+    else: 
+        print("Path does not exist" )
+        exit()
 
-calculate_metrics(top_k_model, val_loader, os.listdir(DATASET_PATH))
-device
-calculate_metrics(top_k_model, test_loader, os.listdir(DATASET_PATH))
+    # Create the dataset and dataloaders
+    datasets = compile_dataset(DATASET_PATH)
+    train_loader, val_loader, test_loader = get_dataloaders(*datasets)
 
+    # Downloads and initializes the ResNet model from the PyTorch database
+    model = topKResnet18(train_loader, k)
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    train(model,
+        train_loader,
+        val_loader,
+        torch.nn.CrossEntropyLoss(),
+        optim.Adam(model.parameters(), lr=0.001),
+        device,
+        os.path.join(args.CHECKPOINT_PATH, "top-k-model.pt"))
