@@ -172,9 +172,11 @@ def train(model, dataloader, val_dataloader, criterion, optimizer, device, save_
             # stop early if overfitting detected
             if early_stop_counter == early_stop_epochs:
                 print(f"Stopping training after {epoch} epochs due to overfitting")
-                return
+                return model
 
         print(f"Epoch {epoch+1} - Train loss: {epoch_loss:.4f}, Val loss: {val_loss:.4f}")
+    return model
+    
 
 def calculate_metrics(model, val_loader, class_names):
     model.eval()  # Set the model to evaluation mode
