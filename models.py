@@ -64,7 +64,7 @@ class DimensionalityReduction(torch.nn.Module):
         return reduced_x
 
 class topKResnet18(torch.nn.Module):
-    def __init__(self, train_loader, k, classify=True):
+    def __init__(self, train_loader, k):
         super(topKResnet18, self).__init__()
         self.n_classes = len(set(train_loader.dataset.targets))
 
