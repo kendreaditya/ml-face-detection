@@ -66,7 +66,8 @@ class DimensionalityReduction(torch.nn.Module):
 class topKResnet18(torch.nn.Module):
     def __init__(self, train_loader, k):
         super(topKResnet18, self).__init__()
-        self.n_classes = len(set(train_loader.dataset.targets))
+        self.n_classes = len(train_loader.dataset.dataset.classes)
+        print(self.n_classes)
 
         model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
 
@@ -91,7 +92,7 @@ class topKResnet18(torch.nn.Module):
         for param in model.parameters():
             param.requires_grad = False
 
-        self.feature_extraction = torch.nn.Sequential(*list(model.children())[:-1], DimensionalityReduction(df, in_features=512, out_features=k))
+        self.feature_extraction = torch.nn.Sequential(*list(model.children())[:-1], DimensionalityReduction(df, out_features=k))
         self.classification = torch.nn.Linear(in_features=k, out_features=self.n_classes)
 
         self.feature_extraction.to(self.device)

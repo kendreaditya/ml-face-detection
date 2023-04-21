@@ -82,7 +82,7 @@ def show_batch(batch):
     plt.show()
 
 # Creates a stratified split of the dataset
-def stratified_split(dataset, split_ratios):
+def stratified_split(dataset, split_ratios, dataset_transforms=None):
     num_splits = len(split_ratios)
     # Compute class frequencies
     class_freq = defaultdict(int)
@@ -93,10 +93,10 @@ def stratified_split(dataset, split_ratios):
     num_samples_per_class_per_split = {}
     for label, freq in class_freq.items():
         num_samples_per_class_per_split[label] = [math.ceil(freq * split_ratio) for split_ratio in split_ratios]
-
-
+    
+    import copy
     class_split_freq = copy.deepcopy(num_samples_per_class_per_split)
-
+    
     # Create empty lists for each split
     split_indices = []
     for i in range(num_splits):
@@ -118,6 +118,11 @@ def stratified_split(dataset, split_ratios):
         split_sampler = SubsetRandomSampler(split_indices[i])
         split_dataset = Subset(dataset, split_indices[i])
         splits.append(split_dataset)
+    
+    for i in range(len(splits)):
+      splits[i] = copy.deepcopy(splits[i])
+      splits[i].dataset.transform = dataset_transforms[i]
+      splits[i].dataset.classes = dataset.classes
 
     return class_split_freq, splits
 
