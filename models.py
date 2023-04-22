@@ -92,7 +92,7 @@ class topKResnet18(torch.nn.Module):
         for param in model.parameters():
             param.requires_grad = False
 
-        self.feature_extraction = torch.nn.Sequential(*list(model.children())[:-1], DimensionalityReduction(df, out_features=k))
+        self.feature_extraction = torch.nn.Sequential(*list(model.children()), DimensionalityReduction(df, out_features=k))
         self.classification = torch.nn.Linear(in_features=k, out_features=self.n_classes)
 
         self.feature_extraction.to(self.device)

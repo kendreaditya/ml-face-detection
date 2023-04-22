@@ -1,3 +1,4 @@
+# %%
 import matplotlib.pyplot as plt
 import torch 
 import torch as nn
@@ -250,3 +251,5 @@ if __name__ == "__main__":
         optim.Adam(model.parameters(), lr=0.001),
         device,
         os.path.join(args.CHECKPOINT_PATH, "top-k-model.pt"))
+
+# %%
