@@ -1,5 +1,6 @@
 import torch 
-import torch as nn
+# import torch as nn
+import torch.nn as nn
 import numpy as np 
 import pandas as pd
 from tqdm import tqdm
@@ -58,6 +59,8 @@ class DimensionalityReduction(torch.nn.Module):
       return reduced_df
 
     def forward(self, x):
+        # Reshape the input tensor to (batch_size, -1)
+        x = x.view(x.size(0), -1)
         # Select only the columns specified in self.columns
         reduced_x = x[:, self.columns].squeeze()
 
@@ -71,7 +74,8 @@ class topKResnet18(torch.nn.Module):
         model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
 
         # Here we remove the last layer - fc (fully connected) so we can do PCA on it
-        model = nn.nn.Sequential(*list(model.children())[:-1])
+        # model = nn.nn.Sequential(*list(model.children())[:-1])
+        model = nn.Sequential(*list(model.children())[:-1])
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         model.to(self.device)
