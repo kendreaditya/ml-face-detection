@@ -18,6 +18,7 @@ from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True 
 
 from models import topKResnet18
+import torchmetrics
 
 # Creates transforms which are used for data augmentation and preprocessing
 def get_dataset_transforms():
@@ -125,7 +126,7 @@ def train(model, dataloader, val_dataloader, criterion, optimizer, device, save_
     best_val_loss = float('inf')
     early_stop_counter = 0
 
-    for epoch in tqdm(range(100)):  # maximum 100 epochs
+    for epoch in tqdm(range(5)):  # maximum 100 epochs
         running_loss = 0.0
         model.train()  # set model to train mode
         model = model.to(device)
@@ -176,38 +177,141 @@ def train(model, dataloader, val_dataloader, criterion, optimizer, device, save_
 
         print(f"Epoch {epoch+1} - Train loss: {epoch_loss:.4f}, Val loss: {val_loss:.4f}")
 
-def calculate_metrics(model, val_loader, class_names):
-    model.eval()  # Set the model to evaluation mode
-    device = next(model.parameters()).device  # Get the device the model is on
+# def calculate_metrics(model, val_loader, class_names):
+#     model.eval()  # Set the model to evaluation mode
+#     device = next(model.parameters()).device  # Get the device the model is on
+#
+#     total_samples = 0
+#     correct_samples = 0
+#     class_correct = list(0. for i in range(len(class_names)))
+#     class_total = list(0. for i in range(len(class_names)))
+#
+#     with torch.no_grad():  # Disable gradient calculation for efficiency
+#         for images, labels in val_loader:
+#             images, labels = images.to(device), labels.to(device)  # Move data to device
+#
+#             outputs = model(images)  # Forward pass
+#             _, predicted = torch.max(outputs, 1)  # Get predicted classes
+#
+#             # Update overall and per-class metrics
+#             total_samples += labels.size(0)
+#             correct_samples += (predicted == labels).sum().item()
+#             for i in range(labels.size(0)):
+#                 label = labels[i]
+#                 class_correct[label] += (predicted[i] == label).item()
+#                 class_total[label] += 1
+#
+#     accuracy = 100 * correct_samples / total_samples
+#     class_accuracy = [100 * class_correct[i] / class_total[i] for i in range(len(class_names))]
+#
+#     print('Accuracy: {:.2f}%'.format(accuracy))
+#     for i in range(len(class_names)):
+#         print('Class {}: {:.2f}%'.format(class_names[i], class_accuracy[i]))
+#
+#     return accuracy, class_accuracy
 
-    total_samples = 0
-    correct_samples = 0
-    class_correct = list(0. for i in range(len(class_names)))
-    class_total = list(0. for i in range(len(class_names)))
 
-    with torch.no_grad():  # Disable gradient calculation for efficiency
-        for images, labels in val_loader:
-            images, labels = images.to(device), labels.to(device)  # Move data to device
+def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataloader, criterion, optimizer, device, save_path, dataset_path, early_stop_epochs=5):
+    class_names = get_class_names(dataset_path)
+    num_classes = len(class_names)
+    best_val_loss = float('inf')
+    early_stop_counter = 0
 
-            outputs = model(images)  # Forward pass
-            _, predicted = torch.max(outputs, 1)  # Get predicted classes
+    # Initialize columns for the accuracy DataFrame
+    columns = ['epoch'] + class_names + ['total_accuracy']
+    accuracy_df = pd.DataFrame(columns=columns)
 
-            # Update overall and per-class metrics
-            total_samples += labels.size(0)
-            correct_samples += (predicted == labels).sum().item()
-            for i in range(labels.size(0)):
-                label = labels[i]
-                class_correct[label] += (predicted[i] == label).item()
-                class_total[label] += 1
+    for epoch in tqdm(range(10)):  # maximum 100 epochs
+        running_loss = 0.0
+        model.train()  # set model to train mode
+        model = model.to(device)
+        accuracy = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes, average='none').to(device)
 
-    accuracy = 100 * correct_samples / total_samples
-    class_accuracy = [100 * class_correct[i] / class_total[i] for i in range(len(class_names))]
+        for inputs, labels in dataloader:
+            inputs, labels = inputs.to(device), labels.to(device)
 
-    print('Accuracy: {:.2f}%'.format(accuracy))
-    for i in range(len(class_names)):
-        print('Class {}: {:.2f}%'.format(class_names[i], class_accuracy[i]))
+            optimizer.zero_grad()
 
-    return accuracy, class_accuracy
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item() * inputs.size(0)
+
+            # Update accuracy
+            accuracy.update(outputs, labels)
+
+        epoch_loss = running_loss / len(dataloader.dataset)
+        per_class_accuracies = accuracy.compute().tolist()  # Get per-class accuracies
+        total_accuracy = sum(per_class_accuracies) / num_classes  # Calculate total accuracy
+
+        # Append accuracies to the DataFrame
+        accuracy_data = {'epoch': epoch + 1, **{class_names[i]: per_class_accuracies[i] for i in range(num_classes)},
+                         'total_accuracy': total_accuracy}
+        accuracy_df = accuracy_df.append(accuracy_data, ignore_index=True)
+
+        print(f'Epoch {epoch + 1}, Loss: {epoch_loss:.4f}, Total Accuracy: {total_accuracy:.4f}, Per-Class Accuracies: {per_class_accuracies}')
+
+        # Validation
+        val_loss = 0.0
+        model.eval()  # set model to evaluation mode
+
+        for inputs, labels in val_dataloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            with torch.no_grad():
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+
+            val_loss += loss.item() * inputs.size(0)
+
+        val_loss /= len(val_dataloader.dataset)
+        print(f'Validation Loss: {val_loss:.4f}')
+
+        # Check for early stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            early_stop_counter = 0
+            torch.save(model.state_dict(), save_path)
+            print(f'Best model saved at {save_path}')
+        else:
+            early_stop_counter += 1
+            if early_stop_counter >= early_stop_epochs:
+                print('Early stopping triggered')
+                break
+
+    # Training loop finished, now evaluate on test set
+    model.load_state_dict(torch.load(save_path))  # Load the best model
+    model.eval()  # set model to evaluation mode
+    test_accuracy = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes, average='none').to(device)
+
+    for inputs, labels in test_dataloader:
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        with torch.no_grad():
+            outputs = model(inputs)
+
+        # Update test accuracy
+        test_accuracy.update(outputs, labels)
+
+    per_class_accuracies = test_accuracy.compute().tolist()  # Get per-class accuracies
+    total_accuracy = sum(per_class_accuracies) / num_classes  # Calculate total accuracy
+
+    # Append test accuracies to the DataFrame
+    accuracy_data = {'epoch': 'test', **{class_names[i]: per_class_accuracies[i] for i in range(num_classes)},
+                     'total_accuracy': total_accuracy}
+    accuracy_df = accuracy_df.append(accuracy_data, ignore_index=True)
+
+    print(f'Test Total Accuracy: {total_accuracy:.4f}, Test Per-Class Accuracies: {per_class_accuracies}')
+
+    return model, accuracy_df
+
+def get_class_names(dataset_path):
+    class_names = [d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))]
+    return class_names
+
 
 if __name__ == "__main__": 
     parser = argparse.ArgumentParser() 
@@ -227,6 +331,10 @@ if __name__ == "__main__":
         print("Path does not exist" )
         exit()
 
+    checkpoints_folder = './checkpoints'
+    if not os.path.exists(checkpoints_folder):
+        os.makedirs(checkpoints_folder)
+
     # Create the dataset and dataloaders
     datasets = compile_dataset(DATASET_PATH)
     train_loader, val_loader, test_loader = get_dataloaders(*datasets)
@@ -235,15 +343,42 @@ if __name__ == "__main__":
     model = topKResnet18(train_loader, k)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+<<<<<<< Updated upstream
     print(f"Using device: {device}")
     # Create the checkpoints folder if it doesn't exist
     checkpoints_folder = './checkpoints'
     if not os.path.exists(checkpoints_folder):
         os.makedirs(checkpoints_folder)
     train(model,
+=======
+
+    # train(model,
+    #     train_loader,
+    #     val_loader,
+    #     torch.nn.CrossEntropyLoss(),
+    #     optim.Adam(model.parameters(), lr=0.001),
+    #     device,
+    #     os.path.join(args.CHECKPOINT_PATH, "top-k-model.pt"))
+    # Replace the train() function call with train_with_accuracy_metrics() in your resNet_script.py file
+    model, accuracy_df = train_with_accuracy_metrics(
+        model,
+>>>>>>> Stashed changes
         train_loader,
         val_loader,
+        test_loader,
         torch.nn.CrossEntropyLoss(),
         optim.Adam(model.parameters(), lr=0.001),
         device,
+<<<<<<< Updated upstream
         os.path.join(args.CHECKPOINT_PATH, "top-k-model.pt"))
+=======
+        os.path.join(checkpoints_folder, 'best_model.pt'),
+        DATASET_PATH,
+        early_stop_epochs=5
+    )
+
+    # Save the accuracy history to a CSV file
+    accuracy_df.to_csv(os.path.join(args.CHECKPOINT_PATH, "train_accuracy.csv"), index=False)
+
+# %%
+>>>>>>> Stashed changes
