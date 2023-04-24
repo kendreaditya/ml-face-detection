@@ -22,6 +22,22 @@ from sklearn import metrics
 from models import topKResnet18
 from resNet_script import compile_dataset, get_dataloaders
 
+def dataloader_features(dataloader, model, features_idx):
+    rows = []
+    targets = []
+    with model.eval():
+        for (inputs, labels) in tqdm(dataloader):
+            output_features = model(inputs)
+
+            for row in np.squeeze(output_features.to('cpu').detach().numpy()):
+                rows.append(row)
+
+            targets += labels.tolist()
+
+        # Here we create a dataframe to store the outputs of the model
+    df = pd.DataFrame(rows, columns=[f'{i}' for i in range(512)])
+    return df[features_idx], targets
+
 if __name__ == "__main__":
 
     # gets data as pandas data frame from script args
@@ -51,31 +67,31 @@ if __name__ == "__main__":
 
     # Downloads and initializes the ResNet model from the PyTorch database
     model = topKResnet18(train_loader, k)
+    
+    # Gets the top_k features from the training dataset
+    train_features = model.dim_reduction_layer.df_top_k
+    train_targets = model.targets
 
-    # get features from resnet model and convert to df
-    features = model.predict(datasets)
-    features_df = pd.DataFrame(features.reshape(features.shape[0], -1))
+    # Gets the top_k feautre's index values
+    features_idx = model.dim_reduction.layer.top_k_features_idx
 
-    # split the data into training and testing sets
-
-    # Separating the target variable
-    features = features_df.values[:, 1:5]
-    target = features_df.values[:, 0]
+    # Extracts the top k features from the test dataset via the dataloader
+    test_features, test_targets = dataloader_features(test_loader, lambda x: model(x, classify=False), features_idx)
 
     # Splitting the dataset into train and test sets
-    features_train, features_test, target_train, target_test = train_test_split(features, target, test_size = 0.3, random_state = 100)
+    # features_train, features_test, target_train, target_test = train_test_split(features, target, test_size = 0.3, random_state = 100)
 
     # Creating the classifier object
     decision_tree = tree.DecisionTreeClassifier(criterion = "gini", random_state = 100)
 
     # train the decision tree
-    decision_tree.fit(features_train, target_train)
+    decision_tree.fit(train_features, train_targets)
 
     # make a prediction using the decision tree
-    class_prediction = decision_tree.predict(features_test)
+    class_prediction = decision_tree.predict(test_features)
 
     # creates a confusion matrix using the decision tree's predictions
-    result_df = metrics.confusion_matrix(target_test, class_prediction)
+    result_df = metrics.confusion_matrix(test_targets, class_prediction)
 
     result_df.to_csv(os.path.join(args.output_dir, 'confusionMatrix_decisionTree.csv'))
 
@@ -83,4 +99,3 @@ if __name__ == "__main__":
     dot_data = export_graphviz(decision_tree, out_file=None)
     graph = pydotplus.graph_from_dot_data(dot_data)
     graph.write_png(os.path.join(args.output_dir, 'decision_tree.png'))
-    
