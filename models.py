@@ -7,10 +7,10 @@ from tqdm import tqdm
 class DimensionalityReduction(torch.nn.Module):
     def __init__(self, df, out_features=64):
         super(DimensionalityReduction, self).__init__()
-        df_top_k = self.find_k_top_corr(df, out_features)
+        self.df_top_k, self.top_k_features_idx = self.find_k_top_corr(df, out_features)
 
         self.columns = [int(i) for i in list(df_top_k.columns)]
-
+to_k
     def find_k_top_corr(self, df, number):
       """
         Given a pandas dataframe, and number of columns you want, it returns df with top n correlated columns
@@ -55,7 +55,7 @@ class DimensionalityReduction(torch.nn.Module):
       # only pick the columns th"/data" at has top 64 from previous dataframe to our new dataframe
       reduced_df = df[top_features]
 
-      return reduced_df
+      return reduced_df, top_features
 
     def forward(self, x):
         # Select only the columns specified in self.columns
@@ -79,6 +79,7 @@ class topKResnet18(torch.nn.Module):
 
         # Here we run the dataset though the model to get the raw features with the shape of (batch_size, 512)
         rows = []
+        self.targets = []
         for (inputs, labels) in tqdm(train_loader):
             inputs = inputs.to(self.device)
             output_features = model(inputs)
@@ -86,13 +87,17 @@ class topKResnet18(torch.nn.Module):
             for row in np.squeeze(output_features.to('cpu').detach().numpy()):
                 rows.append(row)
 
+            self.targets += labels.tolist()
+
         # Here we create a dataframe to store the outputs of the model
-        df = pd.DataFrame(rows, columns=[f'{i}' for i in range(512)])
+        self.df = pd.DataFrame(rows, columns=[f'{i}' for i in range(512)])
 
         for param in model.parameters():
             param.requires_grad = False
 
-        self.feature_extraction = torch.nn.Sequential(*list(model.children()), DimensionalityReduction(df, out_features=k))
+        self.dim_reduction_layer = DimensionalityReduction(df, out_features=k)
+
+        self.feature_extraction = torch.nn.Sequential(*list(model.children()), dim_reduction_layer)
         self.classification = torch.nn.Linear(in_features=k, out_features=self.n_classes)
 
         self.feature_extraction.to(self.device)
