@@ -3,14 +3,15 @@ import torch as nn
 import numpy as np 
 import pandas as pd
 from tqdm import tqdm
+import pandas as pd
 
 class DimensionalityReduction(torch.nn.Module):
     def __init__(self, df, out_features=64):
         super(DimensionalityReduction, self).__init__()
         self.df_top_k, self.top_k_features_idx = self.find_k_top_corr(df, out_features)
 
-        self.columns = [int(i) for i in list(df_top_k.columns)]
-to_k
+        self.columns = [int(i) for i in list(self.df_top_k.columns)]
+        
     def find_k_top_corr(self, df, number):
       """
         Given a pandas dataframe, and number of columns you want, it returns df with top n correlated columns
@@ -95,9 +96,9 @@ class topKResnet18(torch.nn.Module):
         for param in model.parameters():
             param.requires_grad = False
 
-        self.dim_reduction_layer = DimensionalityReduction(df, out_features=k)
+        self.dim_reduction_layer = DimensionalityReduction(self.df, out_features=k)
 
-        self.feature_extraction = torch.nn.Sequential(*list(model.children()), dim_reduction_layer)
+        self.feature_extraction = torch.nn.Sequential(*list(model.children()), self.dim_reduction_layer)
         self.classification = torch.nn.Linear(in_features=k, out_features=self.n_classes)
 
         self.feature_extraction.to(self.device)
