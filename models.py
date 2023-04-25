@@ -6,8 +6,10 @@ from tqdm import tqdm
 import pandas as pd
 
 class DimensionalityReduction(torch.nn.Module):
-    def __init__(self, df, out_features=64):
+    def __init__(self, df, out_features=64, columns=None):
         super(DimensionalityReduction, self).__init__()
+        if columns is not None:
+            self.columns = columns
         self.df_top_k, self.top_k_features_idx = self.find_k_top_corr(df, out_features)
 
         self.columns = [int(i) for i in list(self.df_top_k.columns)]
@@ -65,8 +67,20 @@ class DimensionalityReduction(torch.nn.Module):
         return reduced_x
 
 class topKResnet18(torch.nn.Module):
-    def __init__(self, train_loader, k):
+    def __init__(self, train_loader, k, columns=None):
         super(topKResnet18, self).__init__()
+        if train_loader is None:
+            model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True) 
+            for param in model.parameters():
+                param.requires_grad = False
+
+            self.dim_reduction_layer = DimensionalityReduction(None, out_features=k, columns=columns)
+            self.feature_extraction = torch.nn.Sequential(*list(model.children()), self.dim_reduction_layer)
+            self.classification = torch.nn.Linear(in_features=k, out_features=self.n_classes)
+
+            self.feature_extraction.to(self.device)
+            self.classification.to(self.device)
+
         self.n_classes = len(train_loader.dataset.dataset.classes)
         print(self.n_classes)
 
