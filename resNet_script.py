@@ -18,6 +18,8 @@ import argparse
 from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 from models import topKResnet18
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 # metrics related
 import torchmetrics
@@ -141,6 +143,7 @@ def stratified_split(dataset, split_ratios, dataset_transforms=None):
 
     return class_split_freq, splits
 
+
 def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataloader, criterion, optimizer, device, save_path, dataset_path, early_stop_epochs=5):
     def get_class_names(dataset_path):
         class_names = [d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))]
@@ -155,7 +158,7 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
     columns = ['epoch'] + class_names + ['total_accuracy']
     accuracy_df = pd.DataFrame(columns=columns)
 
-    for epoch in tqdm(range(10)):  # maximum 100 epochs
+    for epoch in tqdm(range(20)):  # maximum 20 epochs
         running_loss = 0.0
         model.train()  # set model to train mode
         model = model.to(device)
@@ -263,6 +266,25 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
 
     return model, accuracy_df
 
+def create_animated_accuracy_plot(accuracy_df, save_path):
+    fig, ax = plt.subplots()
+
+    def update(epoch):
+        ax.clear()
+        for class_name in accuracy_df.columns[1:-1]:
+            class_accuracy = accuracy_df[class_name].iloc[:epoch + 1]
+            ax.plot(class_accuracy, label=class_name)
+
+        ax.set_xlim(0, len(accuracy_df) - 2)  # Exclude the test epoch from the x-axis
+        ax.set_ylim(0, 1)  # Set y-axis limits to be between 0 and 1
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Accuracy')
+        ax.set_title('Class Accuracies over Epochs')
+        ax.legend(loc='upper left')
+
+    ani = FuncAnimation(fig, update, frames=len(accuracy_df) - 1, interval=500, repeat_delay=2000)
+    ani.save(save_path, writer='imagemagick', fps=1)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -308,5 +330,6 @@ if __name__ == "__main__":
         early_stop_epochs=5
     )
     accuracy_df.to_csv(os.path.join(CHECKPOINT_PATH, 'accuracy_metrics.csv'), index=False)
+    create_animated_accuracy_plot(accuracy_df, os.path.join(CHECKPOINT_PATH, 'animated_accuracy_plot.gif'))
 
 # %%
