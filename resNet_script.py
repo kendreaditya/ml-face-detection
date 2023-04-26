@@ -158,6 +158,10 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
     columns = ['epoch'] + class_names + ['total_accuracy']
     accuracy_df = pd.DataFrame(columns=columns)
 
+    # Initialize columns for the loss DataFrame
+    loss_columns = ['epoch'] + [f'val_loss_class_{i}' for i in range(num_classes)] + ['val_loss_total']
+    loss_df = pd.DataFrame(columns=loss_columns)
+
     for epoch in tqdm(range(20)):  # maximum 20 epochs
         running_loss = 0.0
         model.train()  # set model to train mode
@@ -193,6 +197,7 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
 
         # Validation
         val_loss = 0.0
+        val_loss_per_class = [0.0] * num_classes
         model.eval()  # set model to evaluation mode
 
         for inputs, labels in val_dataloader:
@@ -204,8 +209,23 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
 
             val_loss += loss.item() * inputs.size(0)
 
+            # Calculate per-class loss
+            for i in range(num_classes):
+                class_mask = labels == i
+                if class_mask.any():
+                    class_outputs = outputs[class_mask]
+                    class_labels = labels[class_mask]
+                    class_loss = criterion(class_outputs, class_labels)
+                    val_loss_per_class[i] += class_loss.item() * class_labels.size(0)
+
         val_loss /= len(val_dataloader.dataset)
-        print(f'Validation Loss: {val_loss:.4f}')
+        for i in range(num_classes):
+            val_loss_per_class[i] /= len(val_dataloader.dataset)
+
+        # Append validation losses to the DataFrame
+        loss_data = {'epoch': epoch + 1, **{f'val_loss_class_{i}': val_loss_per_class[i] for i in range(num_classes)},
+                     'val_loss_total': val_loss}
+        loss_df = loss_df.append(loss_data, ignore_index=True)
 
         # Check for early stopping
         if val_loss < best_val_loss:
@@ -227,11 +247,25 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
     true_labels = []
     predicted_labels = []
 
+    test_loss = 0.0
+    test_loss_per_class = [0.0] * num_classes
+
     for inputs, labels in test_dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
 
         with torch.no_grad():
             outputs = model(inputs)
+            loss = criterion(outputs, labels)
+        test_loss += loss.item() * inputs.size(0)
+
+        # Calculate per-class loss
+        for i in range(num_classes):
+            class_mask = labels == i
+            if class_mask.any():
+                class_outputs = outputs[class_mask]
+                class_labels = labels[class_mask]
+                class_loss = criterion(class_outputs, class_labels)
+                test_loss_per_class[i] += class_loss.item() * class_labels.size(0)
 
         # Update test accuracy
         test_accuracy.update(outputs, labels)
@@ -241,6 +275,10 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
         true_labels.extend(labels.tolist())
         predicted_labels.extend(preds.tolist())
 
+    test_loss /= len(test_dataloader.dataset)
+    for i in range(num_classes):
+        test_loss_per_class[i] /= len(test_dataloader.dataset)
+
     per_class_accuracies = test_accuracy.compute().tolist()  # Get per-class accuracies
     total_accuracy = sum(per_class_accuracies) / num_classes  # Calculate total accuracy
 
@@ -249,7 +287,13 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
                      'total_accuracy': total_accuracy}
     accuracy_df = accuracy_df.append(accuracy_data, ignore_index=True)
 
+    # Append test losses to the DataFrame
+    loss_data = {'epoch': 'test', **{f'val_loss_class_{i}': test_loss_per_class[i] for i in range(num_classes)},
+                 'val_loss_total': test_loss}
+    loss_df = loss_df.append(loss_data, ignore_index=True)
+
     print(f'Test Total Accuracy: {total_accuracy:.4f}, Test Per-Class Accuracies: {per_class_accuracies}')
+    print(f'Test Total Loss: {test_loss:.4f}, Test Per-Class Losses: {test_loss_per_class}')
 
     # Compute confusion matrix
     cm = confusion_matrix(true_labels, predicted_labels)
@@ -264,7 +308,7 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
     plt.title('Normalized Confusion Matrix')
     plt.savefig(f'{save_path[:-3]}_normalized_confusion_matrix.png')
 
-    return model, accuracy_df
+    return model, accuracy_df, loss_df
 
 def create_animated_accuracy_plot(accuracy_df, save_path):
     fig, ax = plt.subplots()
@@ -282,9 +326,32 @@ def create_animated_accuracy_plot(accuracy_df, save_path):
         ax.set_title('Class Accuracies over Epochs')
         ax.legend(loc='upper left')
 
-    ani = FuncAnimation(fig, update, frames=len(accuracy_df) - 1, interval=500, repeat_delay=2000)
-    ani.save(save_path, writer='imagemagick', fps=1)
+    ani = FuncAnimation(fig, update, frames=len(accuracy_df) - 1, interval=150, repeat_delay=1000)
+    ani.save(save_path, writer='imagemagick', fps=3)
 
+def create_animated_loss_plot(loss_df, save_path):
+    num_classes = (len(loss_df.columns) - 2) // 1
+    fig, ax = plt.subplots()
+
+    def update(epoch):
+        ax.clear()
+        for i in range(num_classes):
+            val_loss = loss_df[f'val_loss_class_{i}'].iloc[:epoch + 1]
+            ax.plot(val_loss, label=f'Val Loss Class {i}', linestyle='--')
+
+        val_loss_total = loss_df['val_loss_total'].iloc[:epoch + 1]
+        ax.plot(val_loss_total, label='Val Loss Total', linestyle='-.', linewidth=2)
+
+        ax.set_xlim(0, len(loss_df) - 1)
+        ax.set_ylim(0, max(loss_df.iloc[:, 1:].max().max(), loss_df.iloc[:, 1:].max().max()))
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_title('Validation Loss over Epochs')
+        ax.legend(loc='upper right')
+
+    ani = FuncAnimation(fig, update, frames=len(loss_df), interval=150, repeat_delay=1000)
+    ani.save(save_path, writer='imagemagick', fps=3)
+    plt.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -317,7 +384,7 @@ if __name__ == "__main__":
         os.makedirs(CHECKPOINT_PATH)
 
     # Call the function with the added test_dataloader parameter
-    model, accuracy_df = train_with_accuracy_metrics(
+    model, accuracy_df, loss_df = train_with_accuracy_metrics(
         model,
         train_loader,
         val_loader,
@@ -330,6 +397,16 @@ if __name__ == "__main__":
         early_stop_epochs=5
     )
     accuracy_df.to_csv(os.path.join(CHECKPOINT_PATH, 'accuracy_metrics.csv'), index=False)
-    create_animated_accuracy_plot(accuracy_df, os.path.join(CHECKPOINT_PATH, 'animated_accuracy_plot.gif'))
+    loss_df.to_csv(os.path.join(CHECKPOINT_PATH, 'loss_metrics.csv'), index=False)
 
+    # Read accuracy DataFrame from the saved CSV file
+    accuracy_df_from_csv = pd.read_csv(os.path.join(CHECKPOINT_PATH, 'accuracy_metrics.csv'))
+    # Create the animated accuracy plot from the loaded DataFrame
+    create_animated_accuracy_plot(accuracy_df_from_csv,
+                                  os.path.join(CHECKPOINT_PATH, 'animated_accuracy_plot..gif'))
+
+    # Read loss DataFrame from the saved CSV file
+    loss_df_from_csv = pd.read_csv(os.path.join(CHECKPOINT_PATH, 'loss_metrics.csv'))
+    # Create the animated loss plot from the loaded DataFrame
+    create_animated_loss_plot(loss_df_from_csv, os.path.join(CHECKPOINT_PATH, 'animated_loss_plot.gif'))
 # %%

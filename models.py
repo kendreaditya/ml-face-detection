@@ -3,17 +3,14 @@ import torch as nn
 import numpy as np 
 import pandas as pd
 from tqdm import tqdm
-import pandas as pd
 
 class DimensionalityReduction(torch.nn.Module):
-    def __init__(self, df, out_features=64, columns=None):
+    def __init__(self, df, out_features=64):
         super(DimensionalityReduction, self).__init__()
-        if columns is not None:
-            self.columns = columns
-        self.df_top_k, self.top_k_features_idx = self.find_k_top_corr(df, out_features)
+        df_top_k = self.find_k_top_corr(df, out_features)
 
-        self.columns = [int(i) for i in list(self.df_top_k.columns)]
-        
+        self.columns = [int(i) for i in list(df_top_k.columns)]
+
     def find_k_top_corr(self, df, number):
       """
         Given a pandas dataframe, and number of columns you want, it returns df with top n correlated columns
@@ -58,7 +55,7 @@ class DimensionalityReduction(torch.nn.Module):
       # only pick the columns th"/data" at has top 64 from previous dataframe to our new dataframe
       reduced_df = df[top_features]
 
-      return reduced_df, top_features
+      return reduced_df
 
     def forward(self, x):
         # Select only the columns specified in self.columns
@@ -67,20 +64,8 @@ class DimensionalityReduction(torch.nn.Module):
         return reduced_x
 
 class topKResnet18(torch.nn.Module):
-    def __init__(self, train_loader, k, columns=None):
+    def __init__(self, train_loader, k):
         super(topKResnet18, self).__init__()
-        if train_loader is None:
-            model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True) 
-            for param in model.parameters():
-                param.requires_grad = False
-
-            self.dim_reduction_layer = DimensionalityReduction(None, out_features=k, columns=columns)
-            self.feature_extraction = torch.nn.Sequential(*list(model.children()), self.dim_reduction_layer)
-            self.classification = torch.nn.Linear(in_features=k, out_features=self.n_classes)
-
-            self.feature_extraction.to(self.device)
-            self.classification.to(self.device)
-
         self.n_classes = len(train_loader.dataset.dataset.classes)
         print(self.n_classes)
 
@@ -94,7 +79,6 @@ class topKResnet18(torch.nn.Module):
 
         # Here we run the dataset though the model to get the raw features with the shape of (batch_size, 512)
         rows = []
-        self.targets = []
         for (inputs, labels) in tqdm(train_loader):
             inputs = inputs.to(self.device)
             output_features = model(inputs)
@@ -102,17 +86,13 @@ class topKResnet18(torch.nn.Module):
             for row in np.squeeze(output_features.to('cpu').detach().numpy()):
                 rows.append(row)
 
-            self.targets += labels.tolist()
-
         # Here we create a dataframe to store the outputs of the model
-        self.df = pd.DataFrame(rows, columns=[f'{i}' for i in range(512)])
+        df = pd.DataFrame(rows, columns=[f'{i}' for i in range(512)])
 
         for param in model.parameters():
             param.requires_grad = False
 
-        self.dim_reduction_layer = DimensionalityReduction(self.df, out_features=k)
-
-        self.feature_extraction = torch.nn.Sequential(*list(model.children()), self.dim_reduction_layer)
+        self.feature_extraction = torch.nn.Sequential(*list(model.children()), DimensionalityReduction(df, out_features=k))
         self.classification = torch.nn.Linear(in_features=k, out_features=self.n_classes)
 
         self.feature_extraction.to(self.device)
