@@ -2,20 +2,22 @@
 import cv2
 import numpy as np
 import torch
+import os 
+from pathlib import Path
+from torchvision.datasets import ImageFolder
 model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
 from torchvision import transforms
 from PIL import Image
 
 # %%
 from models import topKResnet18
-model = topKResnet18(None, topK=64, columns=[f'{i}' for i in range(512)])
-
+#model = topKResnet18(None, k=64, columns=[f'{i}' for i in range(512)])
 #Create video capture object
 
 # %%
 vid = cv2.VideoCapture(0)
 arr = []
-preProcess_img = []
+#preProcess_img = []
 transform = transforms.Compose([
     # Data Preprocessing
     transforms.CenterCrop(224), # Crops the image to a 224 x 224 image 
@@ -26,32 +28,20 @@ transform = transforms.Compose([
 
 
 cv2.namedWindow("Window")
-
+count = 0
 # %%
 while(vid.isOpened()):
 
     #capture video frame by frame
     ret, frame = vid.read()
-    im = Image.fromarray(frame)
-    preprocessed = transform(im)
-    pred = model(preprocessed.unsqueeze(0))
-    print(pred.shape)
-    break
-
+    #print(type(frame))
     cv2.imshow('Window', frame)
+    cv2.imwrite(f'realtime_img\\frame%d.jpg' % count, frame)
+    count+=1
 
     #quit the script using the q key
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
-        print(len(arr))
-        arr
-        for image in arr:
-            preProcessed = transform(image)
-            print(preProcessed.shape)
-            # preProcess_img = np.append(preProcess_img, preProcessed)
-        #Feed data into model
-        preProcess_img = torch.stack(preProcess_img)
-        model(preProcess_img).shape
         break
 
 
@@ -61,3 +51,18 @@ vid.release()
 #destroy all windows
 cv2.destroyAllWindows()
 # %%
+
+img = Path('realtime_img')
+
+for images in os.listdir(img):
+
+    if images.endswith('jpg'):
+
+        images = Image.open(os.path.join(img, images)).convert('RGB')
+        #print(type(images))
+        preProcess_img = transform(images)
+        img_tensor = torch.unsqueeze(preProcess_img, 0)
+        model.eval()
+        out = model(img_tensor)
+        
+print(out)
