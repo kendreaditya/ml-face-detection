@@ -29,7 +29,7 @@ class DimensionalityReduction(torch.nn.Module):
       corr_matrix = df.corr().abs()
 
       # lets create a mask with size of our corr matrix that filled with ones,  but it will only fill lower trinagle. then convert them as boolean.
-      mask = np.tril(np.ones(corr_matrix.shape)).astype(np.bool)
+      mask = np.tril(np.ones(corr_matrix.shape)).astype(bool)
 
       # with using df.mask, we fill the lower triangular matrix to NaN(includes diagonal with 1.0s)
       masked_corr_matrix = corr_matrix.mask(mask)
