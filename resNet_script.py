@@ -159,10 +159,10 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
     accuracy_df = pd.DataFrame(columns=columns)
 
     # Initialize columns for the loss DataFrame
-    loss_columns = ['epoch'] + [f'val_loss_class_{i}' for i in range(num_classes)] + ['val_loss_total']
+    loss_columns = ['epoch'] + [f'val_loss_{class_name}' for class_name in class_names] + ['val_loss_total']
     loss_df = pd.DataFrame(columns=loss_columns)
 
-    for epoch in tqdm(range(20)):  # maximum 20 epochs
+    for epoch in tqdm(range(3)):  # maximum 20 epochs
         running_loss = 0.0
         model.train()  # set model to train mode
         model = model.to(device)
@@ -223,7 +223,8 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
             val_loss_per_class[i] /= len(val_dataloader.dataset)
 
         # Append validation losses to the DataFrame
-        loss_data = {'epoch': epoch + 1, **{f'val_loss_class_{i}': val_loss_per_class[i] for i in range(num_classes)},
+        loss_data = {'epoch': epoch + 1,
+                     **{f'val_loss_{class_names[i]}': val_loss_per_class[i] for i in range(num_classes)},
                      'val_loss_total': val_loss}
         loss_df = loss_df.append(loss_data, ignore_index=True)
 
@@ -288,9 +289,10 @@ def train_with_accuracy_metrics(model, dataloader, val_dataloader, test_dataload
     accuracy_df = accuracy_df.append(accuracy_data, ignore_index=True)
 
     # Append test losses to the DataFrame
-    loss_data = {'epoch': 'test', **{f'val_loss_class_{i}': test_loss_per_class[i] for i in range(num_classes)},
-                 'val_loss_total': test_loss}
-    loss_df = loss_df.append(loss_data, ignore_index=True)
+    test_loss_data = {'epoch': 'test',
+                      **{f'val_loss_{class_names[i]}': test_loss_per_class[i] for i in range(num_classes)},
+                      'val_loss_total': test_loss}
+    loss_df = loss_df.append(test_loss_data, ignore_index=True)
 
     print(f'Test Total Accuracy: {total_accuracy:.4f}, Test Per-Class Accuracies: {per_class_accuracies}')
     print(f'Test Total Loss: {test_loss:.4f}, Test Per-Class Losses: {test_loss_per_class}')
@@ -330,14 +332,15 @@ def create_animated_accuracy_plot(accuracy_df, save_path):
     ani.save(save_path, writer='imagemagick', fps=3)
 
 def create_animated_loss_plot(loss_df, save_path):
-    num_classes = (len(loss_df.columns) - 2) // 1
+    class_names = [col.replace('val_loss_', '') for col in loss_df.columns if 'val_loss_' in col and col != 'val_loss_total']
+    num_classes = len(class_names)
     fig, ax = plt.subplots()
 
     def update(epoch):
         ax.clear()
-        for i in range(num_classes):
-            val_loss = loss_df[f'val_loss_class_{i}'].iloc[:epoch + 1]
-            ax.plot(val_loss, label=f'Val Loss Class {i}', linestyle='--')
+        for i, class_name in enumerate(class_names):
+            val_loss = loss_df[f'val_loss_{class_name}'].iloc[:epoch + 1]
+            ax.plot(val_loss, label=f'Val Loss {class_name}', linestyle='--')
 
         val_loss_total = loss_df['val_loss_total'].iloc[:epoch + 1]
         ax.plot(val_loss_total, label='Val Loss Total', linestyle='-.', linewidth=2)
@@ -349,7 +352,7 @@ def create_animated_loss_plot(loss_df, save_path):
         ax.set_title('Validation Loss over Epochs')
         ax.legend(loc='upper right')
 
-    ani = FuncAnimation(fig, update, frames=len(loss_df), interval=150, repeat_delay=1000)
+    ani = FuncAnimation(fig, update, frames=len(loss_df), interval=250, repeat_delay=2000)
     ani.save(save_path, writer='imagemagick', fps=3)
     plt.close()
 
