@@ -91,9 +91,9 @@ def stratified_split(dataset, split_ratios, dataset_transforms=None):
 
 class_split_freq, [train_dataset, val_dataset, test_dataset] = stratified_split(dataset, [0.7, 0.15, 0.15], dataset_transforms=list(dataset_transforms.values()))
 
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=2)
-val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=64, num_workers=2)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=64, num_workers=2)
+train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=0)
+val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=64, num_workers=0)
+test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=64, num_workers=0)
 
 # Downloads and initializes the ResNet model from the PyTorch database
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -199,32 +199,36 @@ def predict(image, model, classes):
     # Make a prediction using the model
     model.eval()
     with torch.no_grad():
-        output = model(image.unsqueeze(0))
+        if len(image.shape) == 3:
+          image = image.unsqueeze(0)
+        output = model(image)
     idx = torch.argmax(output)
-    predicted_class = classes[idx]
+    return classes[idx]
     
     # Display the input image and the predicted class
-    plt.imshow(image.permute(1, 2, 0))
-    plt.axis('off')
-    plt.title(f'Predicted class: {predicted_class}')
-    plt.show()
+    # plt.imshow(image.permute(1, 2, 0))
+    # plt.axis('off')
+    # plt.title(f'Predicted class: {predicted_class}')
+    # plt.show()
 
 classes = train_loader.dataset.dataset.classes
 # %%
 vid = cv2.VideoCapture(0)
 cv2.namedWindow("Window")
+
 # %%
+import time
 count = 0
-while(vid.isOpened()):
-    #capture video frame by frame
+pbar = tqdm(vid.isOpened())
+while(pbar):
     ret, frame = vid.read()
-    #print(type(frame))
-    # cv2.imwrite(f'realtime_img\\frame%d.jpg' % count, frame)
-    im = Image.fromarray(frame)
-    preprocessed = dataset_transforms['test'](im)
-    pred = top_k_model(preprocessed.unsqueeze(0))
-    class_pred = classes[torch.argmax(pred)]
-    cv2.imshow(class_pred, frame)
+    cv2.imwrite("./frame.jpg", frame)
+    time.sleep(1)
+    image = import_image('./frame.jpg')
+    pred = predict(image, top_k_model, classes)
+    pbar.set_description(pred)
+    cv2.imshow("Window", frame)
+    time.sleep(0.25)
     
     #quit the script using the q key
     key = cv2.waitKey(1) & 0xFF
@@ -232,10 +236,4 @@ while(vid.isOpened()):
         break
 
 
-#Release video capture object
-vid.release()
-# %
-
-#destroy all windows
-cv2.destroyAllWindows()
 # %%
